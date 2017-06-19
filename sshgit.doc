@@ -1,0 +1,174 @@
+Example Jobs 
+
+1. Read SSH Key from Vault
+2. Cloning a Repo with SSHkey.
+3. Run Ansible Playbook
+4. Config Network and Ping
+
+File 'gitse.job'
+
+job "docs" {
+
+  datacenters = ["dc1"]
+
+  type = "batch"
+  vault {
+    policies = ["nomadserver"]
+  }
+
+  group "config" {
+    task "ansible" {
+      artifact {
+        source="git::https://github.com/srivignessh/Test"
+        destination="/local/config/"
+        options {
+          sshkey="${NOMAD_SECRETS_DIR}/pwd"
+        }
+      }
+      driver = "docker"
+      config {
+        network_mode="bridge"
+        image = "williamyeh/ansible:ubuntu14.04"
+        command = "ansible-playbook"
+        args=["-i","'localhost,'","-c","local","/local/config/first.yml"]
+      }
+
+      template {
+        data = "{{ with secret \"secret/hello\" }}{{ .Data.value }}{{ end }}"
+
+        # For troubleshooting purposes. Should be written to ${NOMAD_SECRETS_DIR}
+        destination = "${NOMAD_SECRETS_DIR}/pwd"
+      }
+      resources{
+      cpu= 800  
+      memory = 400
+      }
+
+    }
+  }
+}
+
+Policy File np.hcl 
+
+path "secret/hello"{
+ policy = "read"
+}
+
+T1>./vault server -dev
+T2>./consul agent -dev
+T3>./nomad agent -dev -vault-enabled -vault-token='5e7df5c4-f895-7152-ae66-76d9ca45647d' -vault-address='http://127.0.0.1:8200'
+
+T4>export VAULT_ADDR='http://127.0.0.1:8200'
+   vault policy-write nomadserver np.hcl
+   vault write secret/hello vaule="<base64 sshkey>"
+root@vagrant-ubuntu-trusty-64:/home/vagrant# ./nomad run gitse.job 
+==> Monitoring evaluation "c5a859d5"
+    Evaluation triggered by job "docs"
+    Allocation "50418ccc" created: node "5138e142", group "config"
+    Evaluation status changed: "pending" -> "complete"
+==> Evaluation "c5a859d5" finished with status "complete"
+
+root@vagrant-ubuntu-trusty-64:/home/vagrant# ./nomad status docs 
+ID            = docs
+Name          = docs
+Type          = batch
+Priority      = 50
+Datacenters   = dc1
+Status        = running
+Periodic      = false
+Parameterized = false
+
+Summary
+Task Group  Queued  Starting  Running  Failed  Complete  Lost
+config      0       0         1        0       0         0
+
+Allocations
+ID        Eval ID   Node ID   Task Group  Desired  Status   Created At
+50418ccc  c5a859d5  5138e142  config      run      running  06/19/17 06:00:07 UTC
+
+root@vagrant-ubuntu-trusty-64:/home/vagrant# ./nomad status docs 
+ID            = docs
+Name          = docs
+Type          = batch
+Priority      = 50
+Datacenters   = dc1
+Status        = dead
+Periodic      = false
+Parameterized = false
+
+Summary
+Task Group  Queued  Starting  Running  Failed  Complete  Lost
+config      0       0         0        0       1         0
+
+Allocations
+ID        Eval ID   Node ID   Task Group  Desired  Status    Created At
+50418ccc  c5a859d5  5138e142  config      run      complete  06/19/17 06:00:07 UTC
+
+root@vagrant-ubuntu-trusty-64:/home/vagrant# ./nomad logs 50418ccc
+
+PLAY [all] *********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: ['localhost]
+ok: [']
+
+TASK [ping] ********************************************************************
+ok: ['localhost]
+ok: [']
+
+PLAY RECAP *********************************************************************
+'                          : ok=2    changed=0    unreachable=0    failed=0   
+'localhost                 : ok=2    changed=0    unreachable=0    failed=0   
+
+root@vagrant-ubuntu-trusty-64:/home/vagrant# ./nomad fs 50418ccc ansible/secrets/
+Mode        Size     Modified Time          Name
+-rw-r--r--  0 B      06/19/17 06:00:07 UTC  .nomad-mount
+-rw-r--r--  4.2 KiB  06/19/17 06:00:08 UTC  pwd
+-rwxr-xr-x  36 B     06/19/17 06:00:07 UTC  vault_token
+
+root@vagrant-ubuntu-trusty-64:/home/vagrant# cat np.hcl 
+# Allow creating tokens under "nomad-cluster" role. The role name should be
+# updated if "nomad-cluster" is not used.
+path "auth/token/create/nomad-cluster" {
+  capabilities = ["update"]
+}
+
+# Allow looking up "nomad-cluster" role. The role name should be updated if
+# "nomad-cluster" is not used.
+path "auth/token/roles/nomad-cluster" {
+  capabilities = ["read"]
+}
+
+# Allow looking up the token passed to Nomad to validate # the token has the
+# proper capabilities. This is provided by the "default" policy.
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+
+# Allow looking up incoming tokens to validate they have permissions to access
+# the tokens they are requesting. This is only required if
+# `allow_unauthenticated` is set to false.
+path "auth/token/lookup" {
+  capabilities = ["update"]
+}
+
+# Allow revoking tokens that should no longer exist. This allows revoking
+# tokens for dead tasks.
+path "auth/token/revoke-accessor" {
+  capabilities = ["update"]
+}
+
+# Allow checking the capabilities of our own token. This is used to validate the
+# token upon startup.
+path "sys/capabilities-self" {
+  capabilities = ["update"]
+}
+
+# Allow our own token to be renewed.
+path "auth/token/renew-self" {
+  capabilities = ["update"]
+}
+
+path "secret/hello"{
+ policy = "read"
+}

@@ -1,0 +1,40 @@
+job "docs" {
+
+  datacenters = ["dc1"]
+
+  type = "batch"
+  vault {
+    policies = ["nomadserver"]
+  }
+
+  group "config" {
+    task "ansible" {
+      artifact {
+        source="git::https://github.com/srivignessh/Test"
+        destination="/local/config/"
+        options {
+          sshkey="${NOMAD_SECRETS_DIR}/pwd"
+        }
+      }
+      driver = "docker"
+      config {
+        network_mode="bridge"
+        image = "williamyeh/ansible:ubuntu14.04"
+        command = "ansible-playbook"
+        args=["-i","'localhost,'","-c","local","/local/config/first.yml"]
+      }
+
+      template {
+        data = "{{ with secret \"secret/hello\" }}{{ .Data.value }}{{ end }}"
+
+        # For troubleshooting purposes. Should be written to ${NOMAD_SECRETS_DIR}
+        destination = "${NOMAD_SECRETS_DIR}/pwd"
+      }
+      resources{
+      cpu= 800  
+      memory = 400
+      }
+
+    }
+  }
+}
