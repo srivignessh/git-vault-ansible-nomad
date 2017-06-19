@@ -60,7 +60,7 @@ T3>./nomad agent -dev -vault-enabled -vault-token='5e7df5c4-f895-7152-ae66-76d9c
 
 T4>export VAULT_ADDR='http://127.0.0.1:8200'
    vault policy-write nomadserver np.hcl
-   vault write secret/hello vaule="<base64 sshkey>"
+   vault write secret/hello value="<base64 sshkey>"
 root@vagrant-ubuntu-trusty-64:/home/vagrant# ./nomad run gitse.job 
 ==> Monitoring evaluation "c5a859d5"
     Evaluation triggered by job "docs"
