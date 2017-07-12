@@ -1,5 +1,5 @@
 ---
-- hosts: 10.163.12.42
+- hosts: all
   tasks:
     - ping:
 
